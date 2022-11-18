@@ -1,0 +1,1255 @@
+<!-- !!!!! начало кода прелоадера !!!!! -->
+<div class="preloader">
+    <svg class="preloader__image" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+        <path fill="currentColor"
+            d="M304 48c0 26.51-21.49 48-48 48s-48-21.49-48-48 21.49-48 48-48 48 21.49 48 48zm-48 368c-26.51 0-48 21.49-48 48s21.49 48 48 48 48-21.49 48-48-21.49-48-48-48zm208-208c-26.51 0-48 21.49-48 48s21.49 48 48 48 48-21.49 48-48-21.49-48-48-48zM96 256c0-26.51-21.49-48-48-48S0 229.49 0 256s21.49 48 48 48 48-21.49 48-48zm12.922 99.078c-26.51 0-48 21.49-48 48s21.49 48 48 48 48-21.49 48-48c0-26.509-21.491-48-48-48zm294.156 0c-26.51 0-48 21.49-48 48s21.49 48 48 48 48-21.49 48-48c0-26.509-21.49-48-48-48zM108.922 60.922c-26.51 0-48 21.49-48 48s21.49 48 48 48 48-21.49 48-48-21.491-48-48-48z">
+        </path>
+    </svg>
+</div>
+<!-- !!!!! конец кода прелоадера !!!!! -->
+
+<div class="stream__wrapper">
+    <div class="stream__video">
+        <!-- !!!!! начало кода видео !!!!! -->
+        <script src="https://facecast.net/w/js/iframe.js"></script>
+        <div id='iframe_wrap' class='iframe_wrap'>
+            <iframe id="iframe" style="border:none;" allow="autoplay; fullscreen" allowfullscreen>
+            </iframe>
+        </div>
+        <!-- !!!!! конец кода видео !!!!! -->
+
+        <!-- !!!!! начало кода меню над видео трансляции !!!!! -->
+        <script>
+            let menuTabs = document.querySelectorAll('div.uc-tabs');
+            if (menuTabs) {
+                for (let menuTab of menuTabs) {
+                    iframe_wrap.insertAdjacentHTML('afterbegin', menuTab.outerHTML);
+                    menuTab.remove();
+                }
+            }
+        </script>
+        <!-- !!!!! конец кода меню над видео трансляции !!!!! -->
+    </div>
+
+    <div class="stream__comments">
+        <!-- !!!!! начало кода комментов !!!!! -->
+        <div class="chat__wrapper" id="stream_comments"></div>
+
+        <script id="chatBroEmbedCode">
+            iframe.id = FACECAST_EVENT_ID;
+            /*/
+             * Здесь и далее выглядит странно, но работает. Странно, потому что 'FACECAST_EVENT_ID' - строка (id для iframe), а по логике
+             * событие onload(event)
+            /*/
+            FACECAST_EVENT_ID.onload = fc_load_iframe(document.getElementById(FACECAST_EVENT_ID), FACECAST_PLAYER_PARAMS);
+            // переменные с глобальной областью видимости во всех 'addEventListener'
+            let isModerator = false, // значение может поменяться после 'DOMContentLoaded'
+                // список запрещенных в трансляции слов
+                BAD_WORDS = ['окошка', 'окон', 'окна', 'окно', 'окошко', 'окошек', 'окошки', 'окнами', 'окнах', 'окошечки', 'окошечек', 'оконца', 'окне', 'окошках', 'окошками', 'окошечко', 'окошечками', 'окошечках', 'контроль', 'контроля', 'контролей', 'присутствие', 'присутствия', 'присутствий'],
+                // email и имя пользователя
+                email = '',
+                name = '';
+
+            document.addEventListener('DOMContentLoaded', async () => {
+                // как только DOM загружена, меняем стиль FAQBlock и RemindersBlock СИНХРОННО, иначе прелоадер может исчезнуть раньше, тогда пользователь увидит эти блоки
+                configureFAQBlock();
+                configureRemindersBlock();
+
+                const userIcon = await waitAndFindElement('div.tlk-userbar__popup-login')
+                    .catch((error) => { logError(error); });
+                if (userIcon) {
+                    email = userIcon.querySelector('div.tlk-userbar__popup-email').innerHTML.slice(1, -1);
+                    name = userIcon.querySelector('div.tlk-userbar__popup-name').innerHTML;
+                    isModerator = getIsModeratorParam();
+
+                    if (email && name) {
+                        /*/
+                         * Запускаем проверку пользователя на возможность участия в вебинаре АСИНХРОННО, чтобы страница грузилась дальше
+                         * (за прелоадером видно не будет). Если проверка пройдена, то прелоадер исчезнет, открыв уже загруженную или 
+                         * продолжающую грузиться страницу.
+                        /*/
+                        checkUserParticipation(email)
+                            .then(async () => {
+                                doAsyncFunc(changeChatHeader); // запускаем функцию замены хедера чата АСИНРОННО, чтобы когда чат появился, сразу подменить хедер
+
+                                let chatBroParams = (() => {
+                                    let cb = {
+                                        parentEncodedChatId: '57Xvg',
+                                        chatTitle: getChatTitle(),
+                                        siteDomain: 'zdorovoeobrazovanie.ru',
+                                        siteUserExternalId: email,
+                                        siteUserFullName: name,
+                                        containerDivId: 'stream_comments',
+                                        chatHeight: '100%',
+                                        signature: '06906c55-d632-48c3-bf6d-79e81c190cb7',
+                                    }
+
+                                    if (isModerator) {
+                                        cb.permissions = ['ban', 'delete'];
+                                        cb.signature = MD5(cb.siteDomain + cb.siteUserExternalId + cb.siteUserFullName + cb.permissions.join('') + cb.signature);
+                                        doAsyncFunc(addModeratorsButtons);
+                                    } else {
+                                        cb.signature = MD5(cb.siteDomain + cb.siteUserExternalId + cb.siteUserFullName + cb.signature);
+                                    }
+
+                                    return cb;
+                                })();
+                                ChatbroLoader(chatBroParams);
+
+                                //< !-- !!!!! начало кода автологина фейскаста!!!!! -- >
+                                try {
+                                    let result = await getWebinarData(email, name);
+                                    FACECAST_EVENT_ID.onload = fc_load_iframe(document.getElementById(FACECAST_EVENT_ID), `${FACECAST_PLAYER_PARAMS}&key=${result.key}`);
+
+                                    if (result.personalPhrases) {
+                                        personalPhrases.innerHTML = result.personalPhrases;
+                                        configurePersonalPhrasesBlock();
+                                    }
+                                } catch (error) {
+                                    logError(error);
+                                    FACECAST_EVENT_ID.onload = fc_load_iframe(document.getElementById(FACECAST_EVENT_ID), FACECAST_PLAYER_PARAMS);
+                                }
+                                removePreloader();
+                                //< !-- !!!!! конец кода автологина фейскаста!!!!! -- >
+                            })
+
+                            .catch((error) => {
+                                logError(error);
+                                alert('Перед просмотром трансляции необходимо подать заявку на участие!');
+                                window.location.replace(CONFIRM_PAGE);
+                            });
+                    }
+                } else {
+                    hideChat();
+                    removePreloader();
+                    console.error('ЗАБЫЛ ДОБАВИТЬ СТРАНИЦУ В ЛК ТИЛЬДЫ ИЛИ ТИЛЬДА ПОМЕНЯЛА HTML-РАЗМЕТКУ!!!');
+                }
+            });
+
+            document.addEventListener('chatLoaded', async () => {
+                await configureMessagesStyle()
+                    .then(() => {
+                        configureSendBlock(getAllowSendMessagesParam());
+
+                        // после загрузки чата подписываемся на события: beforeSendMessage (перед отправкой сообщения в чат для фильтрации)
+                        document.addEventListener('beforeSendMessage', filterMessage);
+                        document.addEventListener('newMessage', handleNewMessage);
+                    })
+
+                    .catch((error) => {
+                        hideChat();
+                        logError(error);
+                    });
+                doAsyncFunc(updateMessagesStyle);
+            });
+        </script>
+        <!-- !!!!! конец кода комментов !!!!! -->
+    </div>
+</div>
+
+<!-- Разметка для модераторских быстрых ответов. -->
+<ul id="faq" class="moderators__phrases">
+    <li>1. Технические проблемы.
+        <div>Перезагрузите, пожалуйста, страницу.</div>
+        <div>Уважаемые коллеги! В ходе прямого эфира произошел сбой.
+            Приносим извинения, мы работаем над восстановлением соединения.
+            Это может занять 1-2 минуты.</div>
+        <div>Проверьте, пожалуйста, стабильность интернет-соединения, так как эфир идет без перебоев.</div>
+    </li>
+
+    <li>2. Проблемы со звуком на нашей стороне.
+        <div>Коллеги, мы знаем, что появились проблемы со звуком.
+            Наши специалисты уже устраняют причину.</div>
+    </li>
+
+    <li>3. Можно ли посмотреть в записи?
+        <div>Запись мероприятия появится на портале в течение 1-го часа после окончания трансляции и будет доступна
+            в течение 6(3) календарных дней.</div>
+    </li>
+
+    <li>4. Нечеткие слайды.
+        <div>Проверьте качество трансляции в настройках плеера, нажав на шестеренку.
+            Картинка может быть нечеткой, если у Вас стоит не максимальное качество видео, либо возникли проблемы с
+            интернет-соединением.</div>
+    </li>
+
+    <li>5. Не слышно! Пропал звук!
+        <div>Проверьте, пожалуйста, Ваше интернет-соединение, настройки громкости на компьютере и в плеере
+            трансляции, либо перезагрузите страницу в браузере.</div>
+    </li>
+
+    <li>6. Вопросы про специализацию – нет среди аккредитованных ИЛИ у меня две специализации.
+        <div>По требованию Комиссии НМО в список аккредитованных специализаций должны входить только те
+            специализации, для которых все образовательные элементы, а не отдельные части, профессионально
+            востребованы.</div>
+        <div>Электронный сертификат с кодом НМО автоматически отобразится в личном кабинете портала «Здоровое
+            образование» в течение недели после проведения мероприятия, если Вы выполните все условия для его
+            получения.
+            Как найти сертификаты с кодами НМО в личном кабинете портала «Здоровое образование»?
+            Инструкция доступна по ссылке: https://zdorovoeobrazovanie.ru/certificates-lk
+
+            На сайте https://edu.rosminzdrav.ru/ в личном кабинете Вы уже самостоятельно добавляете код для
+            получения баллов.
+            Список аккредитованных специализаций указан на странице мероприятия.
+            Если Ваша специализация на сайте https://edu.rosminzdrav.ru/ входит в число аккредитованных, код НМО
+            активируется.</div>
+    </li>
+
+    <li>7. Коды НМО будут направлены на электронную почту в течение какого времени?
+        <div>Стал доступен новый функционал. Теперь все сертификаты с кодами НМО, выданные за посещение
+            аккредитованных мероприятий, можно найти в личном кабинете портала «Здоровое образование».
+            С 1 сентября 2022 года email-рассылки с сертификатами не отправляются.
+            Как найти сертификаты с кодами НМО в личном кабинете портала «Здоровое образование»?
+            Инструкция доступна по ссылке: https://zdorovoeobrazovanie.ru/certificates-lk
+
+            Сертификаты становятся доступны для скачивания в течение 7 рабочих дней после проведения мероприятия.
+        </div>
+    </li>
+
+    <li>8. Обнуление времени просмотра.
+        <div>Время присутствия в данном случае обнуляться не будет.</div>
+        <div>Время присутствия в данном случае обнуляться не будет, но нужно учитывать, что после смены
+            устройства/браузера, окна моментально не появятся. Должно пройти время (от 30 до 60 минут).
+            Аналогичная ситуация (задержка появления окон) возникнет, если Вы очистите кэш в браузере во время
+            просмотра трансляции.</div>
+    </li>
+
+    <li>9. Как узнать, сколько по времени присутствовал на конференции?
+        <div>Статистика присутствия на конференции формируется после проведения мероприятия.</div>
+    </li>
+
+    <li>10. Любые вопросы про коды/баллы НМО.
+        <div>Ответы на большинство вопросов относительно баллов НМО можно найти на странице:
+            https://zdorovoeobrazovanie.ru/nmo-lk
+            Не нашли ответ на свой вопрос? Напишите на эл. почту: info@zdorovoeobrazovanie.ru</div>
+    </li>
+
+    <li>11. Проблемы с окнами.
+        <div>Если у Вас установлено расширение Adblock, блокирующее рекламу, то приостановите его работу на данном
+            сайте.
+            Проверки присутствия являются всплывающими окнами, и программа может их блокировать.</div>
+        <div>Окна появляются у всех в разное время.
+            Если Вы непрерывно смотрите трансляцию в течение минимум 40 минут, у Вас появится всплывающее окно.
+            Пожалуйста, дождитесь окна подтверждения.</div>
+        <div>Всплывающие окна появляются произвольно у каждого в свое время.
+            Главное, закрыть окно, нажав на кнопку подтверждения - "ОК".
+            Будьте, пожалуйста, внимательны.</div>
+        <div>Напишите на эл. почту info@zdorovoeobrazovanie.ru Ваши ФИО и эл. адрес, с которого Вы регистрировались
+            на портале, укажите проблему.
+            Наши технические специалисты увидят заявку и учтут Вашу проблему с окнами присутствия.</div>
+        <div>Коллеги, если у вас возникли вопросы по окнам подтверждения присутствия – как они выглядят, когда
+            появляются и т.д. – перейдите на страницу тестирования, специально созданную для вашего удобства:
+            https://zdorovoeobrazovanie.ru/windows-test
+            На странице находится видеоинструкция, посмотрев которую, вы найдете ответы на большинство интересующих
+            вопросов относительно окон.
+
+            Кроме того, на странице вы можете проверить наличие/отсутствие проблем, связанных с появлением окон. Во
+            время просмотра видеоинструкции на вашем экране должно появиться окно подтверждения присутствия (нужно
+            находиться на странице 5-7 минут).</div>
+    </li>
+
+    <li>12. На сайте НМО/edu.rosminzdrav не могу найти ваше мероприятие.
+        <div>Актуализация данных на портале НМО sovetnmo.ru происходит с задержкой 3-4 дня.
+            Пожалуйста, подождите публикации мероприятия на сайте.</div>
+        <div>Данное мероприятие аккредитовано недавно и, вероятно, появится в списке доступных для включения в план
+            обучения в ближайшее время.
+            Проверить аккредитацию мероприятия можно на сайте sovetnmo.ru.
+
+            Для быстрого и удобного поиска мероприятий, проводимых на платформе «Здоровое образование», на Портале
+            непрерывного медицинского и фармацевтического образования Минздрава России https://edu.rosminzdrav.ru/
+            нужно авторизоваться в личном кабинете, перейти в раздел «Мой план» и далее нажать на кнопку «Добавить
+            элементы».
+            Откроется страница для поиска образовательных элементов. Нужно перейти во вкладку «Образовательные
+            мероприятия». В строке поиска указать название мероприятия, а также выбрать нужный период (диапазон дат)
+            – появится список мероприятий.
+            Нужно кликнуть мышкой по наименованию. Далее, если данного мероприятия ранее не было в Плане врача,
+            необходимо нажать кнопку «Включить в план», после этого станет доступным поле «Ввести код».
+
+            Таким образом, полученные на мероприятиях коды конвертируются в баллы НМО (ЗЕТ).</div>
+    </li>
+
+    <li>13. Перерывы.
+        <div>Перерыва не будет, чтобы не нарушать заявленный регламент.
+            Приносим извинения за неудобства и надеемся на ваше понимание.</div>
+        <div>Уважаемые коллеги, мы прерываемся на небольшой перерыв, который продлится XX минут.</div>
+    </li>
+
+    <li>14. Предложения о новом функционале.
+        <div>Спасибо за обратную связь!
+            На данный момент подобный функционал нет возможности реализовать на нашей площадке, но мы возьмем Ваше
+            предложение на заметку.</div>
+    </li>
+
+    <li>15. Общие формулировки.
+        <div>Спикеры будут выступать в соответствии с программой мероприятия.
+            Приятного просмотра!</div>
+        <div>Трансляция началась!
+            В случае, если у вас до сих пор нет трансляции – перезагрузите, пожалуйста, страницу.
+            Чтобы регламент мероприятия не был нарушен, ответы на вопросы будут опубликованы письменно после
+            проведения мероприятия.</div>
+        <div>Чтобы регламент мероприятия не был нарушен, ответы на вопросы будут опубликованы письменно после
+            проведения мероприятия.</div>
+        <div>Подобный вопрос был задан ранее и передан лектору.
+            Ответ будет опубликован в чате после проведения мероприятия/озвучен в прямом эфире.</div>
+    </li>
+
+    <li id="personalPhrases" style="display: none;">16. Персональные формулировки для трансляции.</li>
+</ul>
+
+<ul id="reminders" class="moderators__phrases">
+    <li>Уважаемые коллеги, у вас есть возможность задать вопрос лектору.
+        Ответы на все поступившие вопросы будут опубликованы в чате.</li>
+
+    <li>Уважаемые коллеги, у вас есть возможность задать вопрос лектору.
+        Ответы на все поступившие вопросы будут озвучены в прямом эфире.</li>
+
+    <li>Коллеги, если во время доклада у вас появились вопросы, задавайте их заранее, чтобы лектор успел получить
+        вопрос и дать вам ответ.
+        Вопрос можно задать в чате (справа от окна трансляции).</li>
+</ul>
+
+<!-- Описание используемых в коде функций. -->
+<script>
+    function configureFAQBlock() {
+        faq.hidden = true;
+        faq.onclick = (event) => { faqOnClick(event); }
+
+        for (let li of faq.querySelectorAll('li')) {
+            createSpanTag(li);
+            let childrenList = li.querySelector('span').parentNode.querySelectorAll("div");
+            if (childrenList) {
+                for (let child of childrenList) { child.hidden = true; }
+            }
+        }
+
+        for (let div of faq.querySelectorAll("div")) {
+            div.onclick = (event) => { enterMessage(event); }
+            div.onmouseover = (event) => { event.target.classList.add('message_hover_style'); }
+            div.onmouseout = (event) => { event.target.classList.remove('message_hover_style'); }
+        }
+    }
+
+    function faqOnClick(event) {
+        if (event.target.tagName != "SPAN") { return; }
+
+        for (let div1 of faq.querySelectorAll("div")) {
+            let needHide = true;
+            for (let div2 of event.target.parentNode.querySelectorAll("div")) {
+                if (div1 === div2) {
+                    needHide = false;
+                    break;
+                }
+            }
+            if (needHide) {
+                div1.hidden = true;
+                div1.parentNode.querySelector("span").classList.add("hide");
+                div1.parentNode.querySelector("span").classList.remove("show");
+            }
+        }
+        let answers = event.target.parentNode.querySelectorAll("div");
+        if (!answers) { return; }
+        for (let answer of answers) {
+            answer.hidden = !answer.hidden;
+            if (answer.hidden) {
+                event.target.classList.add("hide");
+                event.target.classList.remove("show");
+            } else {
+                event.target.classList.add("show");
+                event.target.classList.remove("hide");
+            }
+        }
+    }
+
+    function configureRemindersBlock() {
+        reminders.hidden = true;
+        reminders.onclick = (event) => { enterMessage(event); }
+        reminders.onmouseover = (event) => { event.target.classList.add('message_hover_style'); }
+        reminders.onmouseout = (event) => { event.target.classList.remove('message_hover_style'); }
+    }
+
+    async function waitAndFindElement(elementSelector, waitingMilliseconds = 60 * 1e3) {
+        return new Promise((resolve, reject) => {
+            let entranceTime = Date.now();
+            const interval = setInterval(() => {
+                if (waitingMilliseconds > 0) {
+                    //если прошло больше waitingMilliseconds миллисекунд с момента запуска функции и ничего не вернулось, то сообщить об ошибке (элемент не найден)
+                    if (Date.now() - entranceTime > waitingMilliseconds) {
+                        clearInterval(interval);
+                        reject(`can't find an element ${elementSelector} during ${waitingMilliseconds} ms`);
+                    }
+                }
+
+                let element = allrecords.querySelector(elementSelector);
+                if (element) {
+                    clearInterval(interval);
+                    resolve(element);
+                }
+            }, 5);
+        });
+    }
+
+    function getIsModeratorParam() {
+        const titles = document.querySelectorAll('a.tlk-userbar__popup-groups-link');
+        if (titles) {
+            for (let title of titles) {
+                if (title.innerText === 'Moderators') { return true; }
+            }
+        }
+
+        return false;
+    }
+
+    async function checkUserParticipation(email) {
+        /*/
+         * Сначала проверяем, есть ли у пользователя пометка "свои", и если да, то не перебрасываем его на страницу подтверждения.
+         * Если же нет пометки "свои", то проверяем его в книге регистраций на вебинар.
+        /*/
+        try {
+            let result = await getUserMainInformation(email);
+            if (!result.own) { await getUserRegistrationInformation(email); }
+        } catch (error) { throw error; }
+    }
+
+    async function getUserMainInformation(email) {
+        try {
+            let response = await fetch(URI + '/getUserLK?email=' + email, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            let result = await response.json();
+
+            // console.log('main res:', result);
+
+            if (!result) { throw 'got empty user info from DM'; }
+            if (result.message) {
+                throw result.message;
+            } else { return result; }
+        } catch (error) { throw error; }
+    }
+
+    async function getUserRegistrationInformation(email) {
+        try {
+            let body = {
+                'bookID': DM_BOOK_ID,
+                'emails': [email]
+            };
+
+            let response = await fetch(URI + '/getDashaMailData', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            let result = await response.json();
+
+            // console.log('registration res:', result);
+
+            if (!result || !result[email]) { throw 'got empty user info from DM'; }
+            if (result[email].message) {
+                throw result[email].message;
+            } else { return result[email]; }
+        } catch (error) { throw error; }
+    }
+
+    function removePreloader() {
+        document.body.classList.add('loaded_hiding');
+        window.setTimeout(() => {
+            document.body.classList.add('loaded');
+            document.body.classList.remove('loaded_hiding');
+        }, 500);
+    }
+
+    function changeChatHeader() {
+        const interval = setInterval(() => {
+            let sysMes = document.getElementsByClassName('chatbro_system_messages')[0];
+            if (sysMes) {
+                let sysMesText = sysMes.getElementsByClassName('chatbro_message_text')[0];
+                if (sysMesText) {
+                    if (HEADER_MESSAGE) { sysMesText.innerHTML = HEADER_MESSAGE; }
+                    clearInterval(interval);
+                }
+            }
+        }, 5);
+    }
+
+    function getChatTitle() {
+        const titleElems = getTitleElems(),
+            time = titleElems.pop(),
+            date = titleElems.pop(),
+            isTitleElemsOk = checkTitleElems(titleElems);
+
+        return (isTitleElemsOk && time && date) ? 'Комментарии вебинара ' + date + ' ' + time : (isTitleElemsOk && !time && date) ? 'Комментарии вебинара ' + date : 'Чат с ошибкой url';
+    }
+
+    function getTitleElems() {
+        const _date = window.location.pathname.split('-');
+        const lastIndex = _date.length - 1;
+
+        if (_date[lastIndex] > 60) {
+            let year = String(Number(_date[lastIndex]) % 100),
+                month = _date[lastIndex - 1],
+                day = _date[lastIndex - 2],
+                date = [day, month, year].join('.');
+
+            return [day, month, year, 0, 0, date, 0];
+        } else {
+            let minutes = _date[lastIndex],
+                hours = String(Number(_date[lastIndex - 1]) % 100),
+                time = [hours, minutes].join(':'),
+
+                year = String(Number(_date[lastIndex - 2]) % 100),
+                month = _date[lastIndex - 3],
+                day = _date[lastIndex - 4],
+                date = [day, month, year].join('.');
+
+            return [day, month, year, hours, minutes, date, time];
+        }
+    }
+
+    function checkTitleElems(elems) {
+        for (let elem of elems) {
+            let el = Number(elem);
+            if (Number.isNaN(el)) { return false; }
+        }
+
+        return true;
+    }
+
+    function addModeratorsButtons() {
+        const interval = setInterval(() => {
+            let sendContainer = document.getElementsByClassName('chatbro_send_input_block')[0];
+            if (sendContainer) {
+                sendContainer.insertAdjacentHTML("beforebegin", '<div class="moderators_buttons_container"></div>');
+                let buttons = document.getElementsByClassName('moderators_buttons_container');
+                buttons[0].innerHTML = ''
+                    + '<div class="moderators_buttons" id="faqButton">FAQ</div>'
+                    + '<div style="background-color:rgb(230, 230, 230); width: 0.5px;"></div>' //разделитель
+                    + '<div class="moderators_buttons" id="thanksButton">Поблагодарить</div>'
+                    + '<div style="background-color:rgb(230, 230, 230); width: 0.5px;"></div>' //разделитель
+                    + '<div class="moderators_buttons" id="remindersButton">Напоминание</div>'
+                    + '<div style="background-color:rgb(230, 230, 230); width: 0.5px;"></div>' //разделитель
+                    + '<div class="moderators_buttons" onclick="addNewPhraseButtonOnClick()">Добавить</div>';
+
+                createSpanTag(faqButton);
+                createSpanTag(remindersButton);
+
+                faqButton.onclick = (event) => { faqButtonOnClick(event); }
+                remindersButton.onclick = (event) => { remindersButtonOnClick(event); }
+                clearInterval(interval);
+            }
+        }, 5);
+    }
+
+    async function addNewPhraseButtonOnClick() {
+        let messageInput = document.getElementsByClassName('chatbro_send_input')[0];
+        if (messageInput && messageInput.textContent && !personalPhrases.innerHTML.includes('>' + messageInput.textContent + '</')) {
+            let content = window.getComputedStyle(personalPhrases.querySelector('span'), ':before').content;
+            let isHidden = (content.includes('+')) ? true : false;
+            let newPhrase = '<div>' + messageInput.textContent + '</div>';
+            personalPhrases.innerHTML += newPhrase;
+            messageInput.textContent = '';
+            if (personalPhrases.style.display == 'none') { personalPhrases.style.display = ''; }
+
+            for (let div of personalPhrases.querySelectorAll('div')) {
+                div.hidden = isHidden;
+                div.onclick = (event) => { enterMessage(event); }
+                div.onmouseover = (event) => { event.target.classList.add('message_hover_style'); }
+                div.onmouseout = (event) => { event.target.classList.remove('message_hover_style'); }
+            }
+
+            try {
+                await getWebinarData('', '', personalPhrases.innerHTML);
+            } catch (error) { logError(error); }
+        }
+    }
+
+    function faqButtonOnClick(event) {
+        if (event.target.tagName != "SPAN") { return; }
+
+        if (!reminders.hidden) {
+            reminders.hidden = true;
+            remindersButton.querySelector('span').classList.add('hide');
+            remindersButton.querySelector('span').classList.remove('show');
+            faqButton.querySelector('span').classList.add('hide');
+            faqButton.querySelector('span').classList.remove('show');
+        }
+
+        if (faq.hidden) {
+            event.target.classList.add("show");
+            event.target.classList.remove("hide");
+        } else {
+            for (let div of faq.querySelectorAll("div")) {
+                div.hidden = true;
+                div.parentNode.querySelector("span").classList.add("hide");
+                div.parentNode.querySelector("span").classList.remove("show");
+            }
+
+            for (let li of faq.querySelectorAll("li")) {
+                li.querySelector("span").classList.add("hide");
+                li.querySelector("span").classList.remove("show");
+            }
+
+            event.target.classList.add("hide");
+            event.target.classList.remove("show");
+        }
+        faq.hidden = !faq.hidden;
+    }
+
+    function remindersButtonOnClick(event) {
+        if (event.target.tagName != "SPAN") { return; }
+
+        if (!faq.hidden) {
+            faq.hidden = true;
+            faqButton.querySelector('span').classList.add('hide');
+            faqButton.querySelector('span').classList.remove('show');
+            for (let div of faq.querySelectorAll("div")) {
+                div.hidden = true;
+                div.parentNode.querySelector("span").classList.add("hide");
+                div.parentNode.querySelector("span").classList.remove("show");
+            }
+
+            for (let li of faq.querySelectorAll("li")) {
+                li.querySelector("span").classList.add("hide");
+                li.querySelector("span").classList.remove("show");
+            }
+
+            remindersButton.querySelector('span').classList.add('hide');
+            remindersButton.querySelector('span').classList.remove('show');
+        }
+
+        if (reminders.hidden) {
+            event.target.classList.add("show");
+            event.target.classList.remove("hide");
+        } else {
+            event.target.classList.add("hide");
+            event.target.classList.remove("show");
+        }
+        reminders.hidden = !reminders.hidden;
+    }
+
+    async function getWebinarData(email, name, personalPhrases = '') {
+        let body = { 'eventID': FACECAST_EVENT_ID };
+
+        if (personalPhrases) {
+            body['personalPhrases'] = personalPhrases;
+        } else {
+            body['email'] = email;
+            body['name'] = name;
+        }
+        try {
+            let response = await fetch(URI + '/facecastLogin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            let result = await response.json();
+
+            // console.log("res:", result);
+
+            if (result.message) {
+                throw result.message;
+            }
+
+            return result;
+        } catch (error) { throw error; }
+    }
+
+    function configurePersonalPhrasesBlock() {
+        if (personalPhrases.style.display == 'none') { personalPhrases.style.display = ''; }
+        if (personalPhrases.querySelector('span').className == 'show') {
+            personalPhrases.querySelector('span').classList.add('hide');
+            personalPhrases.querySelector('span').classList.remove('show');
+        }
+
+        for (let div of personalPhrases.querySelectorAll('div')) {
+            div.hidden = true;
+            div.onclick = (event) => { enterMessage(event); }
+            div.onmouseover = (event) => { event.target.classList.add('message_hover_style'); }
+            div.onmouseout = (event) => { event.target.classList.remove('message_hover_style'); }
+        }
+    }
+
+    function hideChat() {
+        let videoBlock = document.querySelector('div.stream__video');
+        let chatBlock = document.querySelector('div.stream__comments');
+
+        if (videoBlock && chatBlock) {
+            videoBlock.style.width = '100%';
+            chatBlock.style.width = '0';
+            chatBlock.style.height = '0';
+        }
+    }
+
+    async function configureMessagesStyle() {
+        return new Promise(async function (resolve, reject) {
+            await waitChatMessagesLoading()
+                .catch((error) => { reject(error); });
+            let messages = document.querySelector('table.chatbro_messages').querySelectorAll('tr');
+            try {
+                for (let i = messages.length - 1; i >= 0; i--) {
+                    configureMessageStyle(messages[i]);
+                }
+            } catch (error) { reject(error); }
+            resolve();
+        });
+    }
+
+    async function waitChatMessagesLoading(waitingMilliseconds = -1) {
+        /*/
+         * Eсли передано положительное пользовательское время на поиск сообщений в чате, то оставляем его, иначе передаем 5 мс
+         * в waitAndFindElement(), чтобы не замирать на await (при этом не выбрасываем ошибку, т.к. она - признак отсутствия элемента
+         * на протяжении заданного времени, а если время отрицательное - то мы ищем раз в 5 мс, пока не найдем).
+        /*/
+        let throwError = true;
+        if (waitingMilliseconds <= 0) {
+            throwError = false;
+            waitingMilliseconds = 5;
+        }
+
+        return new Promise(async (resolve, reject) => {
+            const interval = setInterval(async () => {
+                // чат считаем загруженным, если в нем вообще нет сообщений, или найдено хоть одно сообщение
+                let emptyChat = await waitAndFindElement('tr.chatbro_messages_empty', waitingMilliseconds)
+                    .catch((error) => {
+                        if (throwError) {
+                            clearInterval(interval);
+                            reject(error);
+                        }
+                    });
+                let emptyChatDisplay = emptyChat ? emptyChat.style.display : 'none';
+
+                let normalChat = await waitAndFindElement('div.chatbro_message_block', waitingMilliseconds)
+                    .catch((error) => {
+                        if (throwError) {
+                            clearInterval(interval);
+                            reject(error);
+                            return;
+                        }
+                    });
+
+                if (emptyChatDisplay !== 'none' || normalChat) {
+                    clearInterval(interval);
+                    resolve();
+                }
+            }, 0);
+        });
+    }
+
+    function configureMessageStyle(tr) {
+        try {
+            if (isModerator) { addThanksToMessageAuthorOnReply(tr); }
+            let message = tr.querySelector('div.chatbro_message_block');
+            if (message) {
+                switch (message.innerText) {
+                    case 'заблокировать чат':
+                        tr.style.display = 'none';
+                        tr.accessKey = 'mod'; // помечаем сообщения о состоянии чата, чтобы впоследствии по ним осуществлять поиск 
+                        break;
+                    case 'разблокировать чат':
+                        tr.style.display = 'none';
+                        removeChatbroMessage(tr);
+                        break;
+                    default:
+                        findAndChangeAsterisks(message);
+                }
+            }
+        } catch (error) { throw error; }
+    }
+
+    function addThanksToMessageAuthorOnReply(tr) {
+        if (tr) {
+            let author = tr.getAttribute('creatorexternalid'),
+                replyButton = tr.querySelector('div.chatbro_message_action_reply');
+
+            if (replyButton && thanksButton) {
+                replyButton.addEventListener('click', () => {
+                    thanksButton.onclick = () => { thankMessageAuthorOnClick(author); };
+                });
+            }
+        }
+    }
+
+    function thankMessageAuthorOnClick(author) {
+        let reply = document.querySelector('div.chatbro_send_input_preview_attachment');
+        if (!reply) { return; }
+
+        let messageInput = document.querySelector('div.chatbro_send_input');
+        if (messageInput) {
+            messageInput.textContent = "Спасибо, Ваш вопрос направлен лектору."
+            let messageSendButton = document.querySelector('div.chatbro_send_button');
+            if (messageSendButton) { messageSendButton.click(); }
+        }
+
+        (async () => {
+            try {
+                let info = await getUserRegistrationInformation(author);
+
+                if (isNaN(parseFloat(info.points_zo_question))) {
+                    var newQuestionPointsZO = 1;
+                } else {
+                    newQuestionPointsZO = Number(info.points_zo_question) + 1;
+                }
+
+                await updateUserQuestionPointsZO(author, newQuestionPointsZO);
+                console.log(`бонусы ЗО за вопрос для пользователя ${author} в книге ДМ '${DM_BOOK_ID}' обновлены`);
+            } catch (error) { logError(error); }
+        })();
+    }
+
+    async function updateUserQuestionPointsZO(email, questionPointsZO) {
+        try {
+            let body = {
+                'bookID': DM_BOOK_ID,
+                'infoDM': { [email]: { 'бонусы_зо_за_вопрос': questionPointsZO } }
+            };
+
+            let response = await fetch(URI + '/sendDataToDashaMail', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            let result = await response.json();
+
+            // console.log('res:', result);
+
+            if (result.message) {
+                throw result.message;
+            } else { return result; }
+        } catch (error) { throw error; }
+    }
+
+    function removeChatbroMessage(tr) {
+        if (tr) {
+            let deleteButton = tr.querySelector('div.chatbro_message_action_delete');
+            if (deleteButton) { deleteButton.onclick(); }
+        }
+    }
+
+    function findAndChangeAsterisks(mes) {
+        let asterisks = mes.innerHTML.match(/\*/g);
+        if (asterisks) {
+            let length = Math.floor(asterisks.length / 2); // замена будет только между парными звездами
+            if (!length) { return; } // если изначально в строке только одна звезда или звезд нет
+
+            for (let i = 0; i < length; i++) {
+                mes.innerHTML = mes.innerHTML.replace('*', '<strong>').replace('*', '</strong>');
+            }
+        }
+    }
+
+    function getAllowSendMessagesParam() {
+        let modTr = document.querySelector('tr.chatbro_message[accessKey = "mod"]'),
+            modMessage = modTr ? modTr.querySelector('div.chatbro_message_block') : null,
+            allowSendMessages = modMessage ? modMessage.innerText : '';
+
+        // если нашли сообщение от модератора о состоянии чата 'заблокировать чат', то запрещаем обычным людям писать сообщения в чат, в противном случае разрешаем обычным людям писать сообщения в чат
+        switch (allowSendMessages) {
+            case 'заблокировать чат':
+                return false;
+            default:
+                return true;
+        }
+    }
+
+    function configureSendBlock(allowSendMessages) {
+        if (!isModerator) {
+            let sendBlock = document.querySelector('div.chatbro_send');
+            if (sendBlock && !allowSendMessages) {
+                sendBlock.style.display = 'none';
+            } else if (sendBlock && allowSendMessages && sendBlock.style.display == 'none') { // третье условие обнулит стиль, только если до этого оно было сделано 'none', иначе можно обнулить стиль, созданный Chatbro, при доступе к отправке сообщений для обычных людей
+                sendBlock.style.display = '';
+            }
+        }
+    }
+
+    function filterMessage(event) {
+        let message = event.message;
+        let text = message.text.trim().toLowerCase();
+
+        if (!BAD_WORDS.length || isModerator) { return event.onSuccess(message); }
+
+        for (let badWord of BAD_WORDS) {
+            if (checkBadWordInText(text, badWord)) {
+                return event.onFail(WARNING_MESSAGE_TEXT + WARNING_MESSAGE_REF);
+            }
+        }
+
+        if (text === 'заблокировать чат' || text === 'разблокировать чат') { // не надо условие !isModerator, т.к. оно всегда верно на этом этапе, т.к. в блоке выше в противном случае будет успешное прохождение фильтра для сообщения
+            let input = document.querySelector('div.chatbro_send_input');
+            input.innerHTML = '';
+
+            return event.onFail();
+        }
+
+        return event.onSuccess(message);
+    }
+
+    function checkBadWordInText(text, badWord) {
+        if (text.indexOf(badWord) == -1) { return false; }
+
+        let textWords = text.match(/\p{Script=Cyrillic}+/gu); //слово из кириллических символов
+        for (let word of textWords) {
+            if (word == badWord) { return true; }
+        }
+
+        return false;
+    }
+
+    function handleNewMessage(event) {
+        let newMessage = event.messageDiv.querySelector('div.chatbro_message_block'),
+            newMessageText = newMessage ? newMessage.innerText : '',
+            allowSendMessages = newMessageText == 'разблокировать чат' ? true : newMessageText == 'заблокировать чат' ? false : '';
+
+        // в чате всегда либо есть сообщение модератора о блокировке чата, либо вовсе нет модераторских сообщений о состоянии чата, так что после добавления нового старое, если оно найдено, должно быть удалено
+        if (newMessage.innerText == 'разблокировать чат' || newMessage.innerText == 'заблокировать чат') {
+            removeChatbroMessage(document.querySelector('tr.chatbro_message[accessKey = "mod"]'));
+        }
+
+        configureMessageStyle(newMessage.closest('tr'));
+        if (allowSendMessages !== '') { configureSendBlock(allowSendMessages); }
+    }
+
+    function updateMessagesStyle() {
+        const interval = setInterval(async () => {
+            await configureMessagesStyle()
+                .then(() => {
+                    configureSendBlock(getAllowSendMessagesParam());
+                })
+
+                .catch((error) => {
+                    hideChat();
+                    logError(error);
+                    clearInterval(interval);
+                });
+        }, 500);
+    }
+
+    function createSpanTag(element) {
+        let span = document.createElement("span");
+        span.classList.add("hide");
+        element.prepend(span);
+        span.append(span.nextSibling);
+    }
+
+    function enterMessage(event) {
+        if (!reminders.hidden) {
+            reminders.hidden = true;
+            remindersButton.querySelector('span').classList.add("hide");
+            remindersButton.querySelector('span').classList.remove("show");
+        }
+
+        if (!faq.hidden) {
+            faq.hidden = true;
+            for (let div of faq.querySelectorAll("div")) {
+                div.hidden = true;
+                div.parentNode.querySelector("span").classList.add("hide");
+                div.parentNode.querySelector("span").classList.remove("show");
+            }
+
+            for (let li of faq.querySelectorAll("li")) {
+                li.querySelector("span").classList.add("hide");
+                li.querySelector("span").classList.remove("show");
+            }
+
+            faqButton.querySelector('span').classList.add("hide");
+            faqButton.querySelector('span').classList.remove("show");
+        }
+
+        let messageInput = document.getElementsByClassName('chatbro_send_input')[0];
+        if (messageInput) { messageInput.textContent = event.target.innerHTML; }
+    }
+
+    function logError(error) { console.error('ошибка:', error); }
+
+    async function doAsyncFunc(SyncFunc) {
+        await new Promise(resolve => {
+            resolve(SyncFunc());
+        });
+    }
+
+    // ------------MD5 FUNCTION STARTS------------
+    var MD5 = function (d) {
+        d = unescape(encodeURIComponent(d));
+        result = M(V(Y(X(d), 8 * d.length)));
+        return result.toLowerCase();
+    };
+
+    function M(d) {
+        for (var _, m = "0123456789ABCDEF", f = "", r = 0; r < d.length; r++) _ = d.charCodeAt(r), f += m.charAt(_ >>> 4 & 15) + m.charAt(15 & _);
+        return f
+    }
+
+    function X(d) {
+        for (var _ = Array(d.length >> 2), m = 0; m < _.length; m++) _[m] = 0;
+        for (m = 0; m < 8 * d.length; m += 8) _[m >> 5] |= (255 & d.charCodeAt(m / 8)) << m % 32;
+        return _
+    }
+
+    function V(d) {
+        for (var _ = "", m = 0; m < 32 * d.length; m += 8) _ += String.fromCharCode(d[m >> 5] >>> m % 32 & 255);
+        return _
+    }
+
+    function Y(d, _) {
+        d[_ >> 5] |= 128 << _ % 32, d[14 + (_ + 64 >>> 9 << 4)] = _;
+        for (var m = 1732584193, f = -271733879, r = -1732584194, i = 271733878, n = 0; n < d.length; n += 16) {
+            var h = m,
+                t = f,
+                g = r,
+                e = i;
+            f = md5_ii(f = md5_ii(f = md5_ii(f = md5_ii(f = md5_hh(f = md5_hh(f = md5_hh(f = md5_hh(f = md5_gg(f = md5_gg(f = md5_gg(f = md5_gg(f = md5_ff(f = md5_ff(f = md5_ff(f = md5_ff(f, r = md5_ff(r, i = md5_ff(i, m = md5_ff(m, f, r, i, d[n + 0], 7, -680876936), f, r, d[n + 1], 12, -389564586), m, f, d[n + 2], 17, 606105819), i, m, d[n + 3], 22, -1044525330), r = md5_ff(r, i = md5_ff(i, m = md5_ff(m, f, r, i, d[n + 4], 7, -176418897), f, r, d[n + 5], 12, 1200080426), m, f, d[n + 6], 17, -1473231341), i, m, d[n + 7], 22, -45705983), r = md5_ff(r, i = md5_ff(i, m = md5_ff(m, f, r, i, d[n + 8], 7, 1770035416), f, r, d[n + 9], 12, -1958414417), m, f, d[n + 10], 17, -42063), i, m, d[n + 11], 22, -1990404162), r = md5_ff(r, i = md5_ff(i, m = md5_ff(m, f, r, i, d[n + 12], 7, 1804603682), f, r, d[n + 13], 12, -40341101), m, f, d[n + 14], 17, -1502002290), i, m, d[n + 15], 22, 1236535329), r = md5_gg(r, i = md5_gg(i, m = md5_gg(m, f, r, i, d[n + 1], 5, -165796510), f, r, d[n + 6], 9, -1069501632), m, f, d[n + 11], 14, 643717713), i, m, d[n + 0], 20, -373897302), r = md5_gg(r, i = md5_gg(i, m = md5_gg(m, f, r, i, d[n + 5], 5, -701558691), f, r, d[n + 10], 9, 38016083), m, f, d[n + 15], 14, -660478335), i, m, d[n + 4], 20, -405537848), r = md5_gg(r, i = md5_gg(i, m = md5_gg(m, f, r, i, d[n + 9], 5, 568446438), f, r, d[n + 14], 9, -1019803690), m, f, d[n + 3], 14, -187363961), i, m, d[n + 8], 20, 1163531501), r = md5_gg(r, i = md5_gg(i, m = md5_gg(m, f, r, i, d[n + 13], 5, -1444681467), f, r, d[n + 2], 9, -51403784), m, f, d[n + 7], 14, 1735328473), i, m, d[n + 12], 20, -1926607734), r = md5_hh(r, i = md5_hh(i, m = md5_hh(m, f, r, i, d[n + 5], 4, -378558), f, r, d[n + 8], 11, -2022574463), m, f, d[n + 11], 16, 1839030562), i, m, d[n + 14], 23, -35309556), r = md5_hh(r, i = md5_hh(i, m = md5_hh(m, f, r, i, d[n + 1], 4, -1530992060), f, r, d[n + 4], 11, 1272893353), m, f, d[n + 7], 16, -155497632), i, m, d[n + 10], 23, -1094730640), r = md5_hh(r, i = md5_hh(i, m = md5_hh(m, f, r, i, d[n + 13], 4, 681279174), f, r, d[n + 0], 11, -358537222), m, f, d[n + 3], 16, -722521979), i, m, d[n + 6], 23, 76029189), r = md5_hh(r, i = md5_hh(i, m = md5_hh(m, f, r, i, d[n + 9], 4, -640364487), f, r, d[n + 12], 11, -421815835), m, f, d[n + 15], 16, 530742520), i, m, d[n + 2], 23, -995338651), r = md5_ii(r, i = md5_ii(i, m = md5_ii(m, f, r, i, d[n + 0], 6, -198630844), f, r, d[n + 7], 10, 1126891415), m, f, d[n + 14], 15, -1416354905), i, m, d[n + 5], 21, -57434055), r = md5_ii(r, i = md5_ii(i, m = md5_ii(m, f, r, i, d[n + 12], 6, 1700485571), f, r, d[n + 3], 10, -1894986606), m, f, d[n + 10], 15, -1051523), i, m, d[n + 1], 21, -2054922799), r = md5_ii(r, i = md5_ii(i, m = md5_ii(m, f, r, i, d[n + 8], 6, 1873313359), f, r, d[n + 15], 10, -30611744), m, f, d[n + 6], 15, -1560198380), i, m, d[n + 13], 21, 1309151649), r = md5_ii(r, i = md5_ii(i, m = md5_ii(m, f, r, i, d[n + 4], 6, -145523070), f, r, d[n + 11], 10, -1120210379), m, f, d[n + 2], 15, 718787259), i, m, d[n + 9], 21, -343485551), m = safe_add(m, h), f = safe_add(f, t), r = safe_add(r, g), i = safe_add(i, e)
+        }
+        return Array(m, f, r, i)
+    }
+
+    function md5_cmn(d, _, m, f, r, i) {
+        return safe_add(bit_rol(safe_add(safe_add(_, d), safe_add(f, i)), r), m)
+    }
+
+    function md5_ff(d, _, m, f, r, i, n) {
+        return md5_cmn(_ & m | ~_ & f, d, _, r, i, n)
+    }
+
+    function md5_gg(d, _, m, f, r, i, n) {
+        return md5_cmn(_ & f | m & ~f, d, _, r, i, n)
+    }
+
+    function md5_hh(d, _, m, f, r, i, n) {
+        return md5_cmn(_ ^ m ^ f, d, _, r, i, n)
+    }
+
+    function md5_ii(d, _, m, f, r, i, n) {
+        return md5_cmn(m ^ (_ | ~f), d, _, r, i, n)
+    }
+
+    function safe_add(d, _) {
+        var m = (65535 & d) + (65535 & _);
+        return (d >> 16) + (_ >> 16) + (m >> 16) << 16 | 65535 & m
+    }
+
+    function bit_rol(d, _) {
+        return d << _ | d >>> 32 - _
+    }
+    // -------------MD5 FUNCTION ENDS-------------
+
+    // внешняя функция для работы ChatBro  
+    function ChatbroLoader(chats, async) {
+        async = !1 !== async;
+        var params = {
+            embedChatsParameters: chats instanceof Array ? chats : [chats],
+            lang: navigator.language || navigator.userLanguage,
+            needLoadCode: 'undefined' == typeof Chatbro,
+            embedParamsVersion: localStorage.embedParamsVersion,
+            chatbroScriptVersion: localStorage.chatbroScriptVersion
+        },
+            xhr = new XMLHttpRequest;
+        xhr.withCredentials = !0;
+        xhr.onload = function () { eval(xhr.responseText) };
+        xhr.onerror = function () { logError('Chatbro loading error') };
+        xhr.open('GET', '//www.chatbro.com/embed.js?' + btoa(unescape(encodeURIComponent(JSON.stringify(params)))), async);
+        xhr.send();
+    };
+</script>
+
+<!-- Описание используемых в коде стилей. -->
+<style>
+    /* стили прелоадера */
+    .preloader {
+        position: fixed;
+        left: 0;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        overflow: hidden;
+        background-color: #ffffff;
+        /*background-image: linear-gradient(19deg, #265279 0%, rgb(168,175,196) 100%);*/
+        z-index: 1001;
+        color: #265279;
+    }
+
+    .preloader__image {
+        position: relative;
+        top: 50%;
+        left: 50%;
+        width: 70px;
+        height: 70px;
+        margin-top: -35px;
+        margin-left: -35px;
+        text-align: center;
+        animation: preloader-rotate 1.5s infinite linear;
+    }
+
+    @keyframes preloader-rotate {
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
+    .loaded_hiding .preloader {
+        transition: 0.3s opacity;
+        opacity: 0;
+    }
+
+    .loaded .preloader {
+        display: none;
+    }
+
+
+    .message_hover_style::before {
+        content: '\27A0';
+    }
+
+    .hide::before {
+        content: "+";
+    }
+
+    .show::before {
+        content: "-";
+    }
+
+    /*элемент прокрутки до последнего сообщения */
+    .chatbro_messages_scroll_to_last {
+        z-index: 10;
+    }
+
+    .stream__wrapper {
+        position: relative;
+        height: 100vh;
+        display: flex;
+    }
+
+    .stream__video {
+        width: 67%;
+    }
+
+    .stream__comments {
+        width: 33%;
+        overflow-y: scroll;
+        display: flex;
+        flex-direction: column-reverse;
+        background-color: rgb(71, 77, 91);
+    }
+
+    .chat__wrapper {
+        height: 94%;
+    }
+
+    .moderators_buttons_container {
+        background-color: rgb(244, 244, 244);
+        border-top: 1px solid rgb(230, 230, 230);
+        display: flex;
+        height: 30px;
+        width: 100%;
+        justify-content: space-evenly;
+    }
+
+    .moderators_buttons {
+        transition: .2s ease-out;
+        padding: 2px 8px;
+        cursor: pointer;
+        color: rgb(63, 69, 73);
+    }
+
+    .moderators_buttons:hover {
+        color: rgb(34, 45, 65);
+        font-size: 13px;
+    }
+
+    .moderators__phrases {
+        white-space: normal;
+        text-overflow: ellipsis;
+        float: left;
+        font-size: 13px;
+        line-height: 31px;
+
+        margin: 0 !important;
+        padding: 0 !important;
+        max-width: 50%;
+        max-height: 100%;
+
+        z-index: 10;
+        position: absolute;
+        bottom: 0;
+        left: 27%;
+        width: 40%;
+        overflow-y: scroll;
+    }
+
+    .moderators__phrases span {
+        display: inline;
+        cursor: pointer;
+    }
+
+    .moderators__phrases li {
+        transition: .3s ease-out;
+        cursor: pointer;
+        position: relative;
+        float: left;
+        width: 100%;
+        background-color: rgb(71, 77, 91);
+        color: rgb(255, 255, 255);
+        list-style: none;
+    }
+
+    .moderators__phrases li:hover {
+        background-color: rgb(121, 128, 133);
+        font-size: 14px;
+    }
+
+    .moderators__phrases div {
+        transition: .4s ease-out;
+        background-color: #337ab7;
+        color: rgb(255, 255, 255);
+        cursor: pointer;
+        font-size: 13px;
+    }
+
+    .moderators__phrases div:hover {
+        background-color: rgb(0, 174, 255);
+        /*font-size: 14px;*/
+    }
+
+    @media screen and (max-width: 980px) {
+        .moderators__phrases {
+            width: 50%;
+            left: 50%;
+            max-height: 60%;
+            bottom: 70px;
+        }
+
+        .stream__wrapper {
+            height: auto;
+            display: block;
+        }
+
+        .stream__video {
+            width: 100%;
+            height: 500px;
+        }
+
+        .stream__comments {
+            width: 100%;
+        }
+    }
+
+    @media screen and (max-width: 480px) {
+        .stream__video {
+            width: 100%;
+            height: 340px;
+        }
+    }
+
+    .hcc.hc__m.hc__message {
+        display: block !important;
+    }
+
+    .stream__video {
+        height: 100% !important;
+        background: #000 !important;
+        padding: 0 !important;
+    }
+
+    .stream__video>div {
+        height: 100% !important;
+        padding: 0 !important;
+    }
+</style>

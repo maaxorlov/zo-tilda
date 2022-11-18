@@ -1,0 +1,13 @@
+<!-- Код проброса UTM меток -->
+<script>
+    let a_tags = document.getElementsByTagName('a');
+    if (location.search) {
+        [].forEach.call(a_tags, (a_tag) => {
+            if (a_tag.href.indexOf("zdorovoeobrazovanie.ru") > 0 && a_tag.href.indexOf("#") < 0) {
+                if (a_tag.href.indexOf(location.search) == -1) {
+                    a_tag.href += location.search;
+                }
+            }
+        });
+    }
+</script>

@@ -1,0 +1,439 @@
+<script>
+    // const URI = 'http://localhost:8080/api/v1';
+    const URI = 'https://zo-backend.onrender.com/api/v1';
+</script>
+
+<!-- Вспомогательные функции. -->
+<script>
+    function getSuccessRedirectURL() {
+        const
+            form = document.querySelector('form[data-success-url]'),
+            successRedirectURL = form.getAttribute('data-success-url');
+        form.setAttribute('data-success-url', '');
+
+        return successRedirectURL;
+    }
+
+    function hideWarnings() {
+        for (const warning of warnings) { // warnings - глобальная переменная
+            warning.style.display = "none";
+        }
+    }
+
+    function setVisitationType() {
+        const
+            visitationTypeSelect = document.querySelector('select[name="список_типов_посещения"]'),
+            visitationTypeHiddenField = document.querySelector('input[type="hidden"][name="тип_посещения"]');
+
+        if (visitationTypeSelect && visitationTypeHiddenField) {
+            visitationTypeSelect.addEventListener("change", () => {
+                visitationTypeHiddenField.value = visitationTypeSelect.selectedOptions[0].value;
+                infoDM['visitationType'] = visitationTypeHiddenField.value; // infoDM - глобальная переменная, которая далее используется для отправки данных в книги из скрытого поля 'list_id' формы
+            });
+        }
+    }
+
+    async function waitAndFindElement(elementSelector, waitingMilliseconds = 60 * 1e3) {
+        return new Promise((resolve, reject) => {
+            const
+                entranceTime = Date.now(),
+                interval = setInterval(() => {
+                    if (waitingMilliseconds > 0) {
+                        // если прошло больше waitingMilliseconds миллисекунд с момента запуска функции и ничего не вернулось, то сообщить об ошибке (элемент не найден)
+                        if (Date.now() - entranceTime > waitingMilliseconds) {
+                            clearInterval(interval);
+                            reject(`can't find an element ${elementSelector} during ${waitingMilliseconds} ms`);
+                        }
+                    }
+
+                    let element = allrecords.querySelector(elementSelector); // allrecords - id блока в разметке Тильды, содержащего все записи
+                    if (element) {
+                        clearInterval(interval);
+                        resolve(element);
+                    }
+                }, 5);
+        });
+    }
+
+    async function getDMData(email) {
+        try {
+            const
+                response = await fetch(URI + '/getUserLK?email=' + email, {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' },
+                }),
+                result = await response.json();
+
+            // console.log('res:', result);
+
+            if (!result) { throw 'got empty user info from DM'; }
+            if (result.message) {
+                throw result.message;
+            } else {
+                return result;
+            }
+        } catch (error) { throw error; }
+    }
+
+    function checkStatus(result) {
+        // warnings - глобальная переменная
+        switch (result.status) {
+            case 2:
+                confirmBlock.style.display = "none";
+                $(warnings[1]).slideToggle(500); //t_lazyload_update(); // меняем стиль текстового блока с уведомлением с невидимого на видимый
+                break;
+            case 3:
+                confirmBlock.style.display = "none";
+                $(warnings[2]).slideToggle(500); //t_lazyload_update(); // меняем стиль текстового блока с уведомлением с невидимого на видимый
+                break;
+            case -1:
+                throw `got unknown status {${result.statusExplain}} from DashaMail`;
+        }
+    }
+
+    function checkUndefResultFields(result) {
+        return !result.name || !result.phone || !result.citizenship || !result.district ||
+            !result.region || !result.city || !result.specialization || !result.position;
+    }
+
+    async function getRegistrationData(email, bookID) {
+        try {
+            const
+                body = {
+                    'bookID': bookID,
+                    'emails': [email]
+                },
+                response = await fetch(URI + '/getDashaMailData', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                }),
+                result = await response.json();
+
+            // console.log('res:', result);
+
+            if (!result) { throw 'got empty result from DM'; }
+            if (result.message) {
+                if (result.message.includes('нет данных при выводе')) {
+                    throw `${result.message} (check that DM book '${bookID}' is correct)`
+                }
+                throw result.message;
+            }
+            if (!result[email]) { throw 'got empty user info from DM'; }
+            if (result[email].message) {
+                if (result[email].message.includes('нет данных при выводе')) {
+                    throw `${result[email].message} (check that user exists in DM book '${bookID})'`
+                }
+                throw result[email].message;
+            }
+        } catch (error) { throw error; }
+    }
+
+    function showRedirectForUser() {
+        confirmBlock.style.display = 'none'; // confirmBlock, warnings - глобальные переменные
+        const refButton = document.querySelector('div.uc-existed').querySelector('a');
+        refButton.href = successRedirectURL; // successRedirectURL - глобальная переменная
+        $(warnings[3]).slideToggle(500); //t_lazyload_update(); // меняем стиль текстового блока с уведомлением с невидимого на видимый
+    }
+
+    function showErrorForUser(error) {
+        confirmBlock.style.display = 'none'; // confirmBlock, warnings - глобальные переменные
+        warnings[0].innerHTML = warnings[0].innerHTML.replaceAll('{error}', error);
+        $(warnings[0]).slideToggle(500); //t_lazyload_update(); // меняем стиль текстового блока с уведомлением с невидимого на видимый
+        logError(error);
+    }
+
+    function removePreloader() {
+        document.body.classList.add('loaded_hiding');
+        window.setTimeout(function () {
+            document.body.classList.add('loaded');
+            document.body.classList.remove('loaded_hiding');
+        }, 500);
+    }
+
+    function getUtmParameter(sParam) {
+        const url = window.location.search.substring(1);
+        const urlVariables = url.split('&');
+        for (let i = 0; i < urlVariables.length; i++) {
+            const variables = urlVariables[i].split('=');
+            if (variables[0] === sParam) {
+                return variables[1];
+            }
+        }
+        return '';
+    }
+
+    function getData(info) {
+        // infoDM - глобальная переменная, которая далее используется для отправки данных в книги из скрытого поля 'list_id' формы
+        infoDM['email'] = info[0];
+        infoDM['eventFormat'] = info[1];
+        infoDM['eventName'] = info[2];
+        infoDM['eventDate'] = info[3];
+        infoDM['name'] = info[4];
+        infoDM['specialization'] = info[5];
+        infoDM['district'] = info[6];
+        infoDM['city'] = info[7];
+        infoDM['visitationType'] = info[8];
+        infoDM['phone'] = info[9];
+        infoDM['region'] = info[10];
+        infoDM['citizenship'] = info[11];
+        infoDM['position'] = info[12];
+        infoDM['sourceUTM'] = info[13];
+        infoDM['mediumUTM'] = info[14];
+        infoDM['campaignUTM'] = info[15];
+        infoDM['contentUTM'] = info[16];
+    }
+
+    async function writeDataToDM(bookID) {
+        // infoDM - глобальная переменная
+        try {
+            const
+                email = infoDM['email'],
+                body = {
+                    'bookID': bookID,
+                    'infoDM': { [email]: infoDM }
+                },
+                response = await fetch(URI + '/sendDataToDashaMail', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                }),
+                result = await response.json();
+
+            // console.log('res:', result);
+
+            if (result.message && !result.message.includes('нет данных при выводе')) {
+                throw result.message;
+            }
+        } catch (error) { throw error; }
+    }
+
+    function logError(error) { console.error(`ошибка: ${error}`); }
+
+    // полифил для Promise.allSettled, если браузер старый и такого в нем нет
+    if (!Promise.allSettled) {
+        Promise.allSettled = function (promises) {
+            return Promise.all(
+                promises.map(p => Promise.resolve(p)
+                    .then(
+                        value => ({
+                            status: 'fulfilled',
+                            value: value
+                        }),
+                        error => ({
+                            status: 'rejected',
+                            reason: error
+                        })
+                    )
+                )
+            );
+        };
+    }
+</script>
+
+<!-- Создание и заполнение скрытых полей "name", "phone", "основная_специализация", "федеральный_округ", "город", "гражданство", "регион_для_россии" данными из книги ДМ "Регистрация на сайте ЗО" при подаче заявки на участие в мероприятие. -->
+<!-- Прелоадер. -->
+<div class="preloader">
+    <svg class="preloader__image" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+        <path fill="currentColor"
+              d="M304 48c0 26.51-21.49 48-48 48s-48-21.49-48-48 21.49-48 48-48 48 21.49 48 48zm-48 368c-26.51 0-48 21.49-48 48s21.49 48 48 48 48-21.49 48-48-21.49-48-48-48zm208-208c-26.51 0-48 21.49-48 48s21.49 48 48 48 48-21.49 48-48-21.49-48-48-48zM96 256c0-26.51-21.49-48-48-48S0 229.49 0 256s21.49 48 48 48 48-21.49 48-48zm12.922 99.078c-26.51 0-48 21.49-48 48s21.49 48 48 48 48-21.49 48-48c0-26.509-21.491-48-48-48zm294.156 0c-26.51 0-48 21.49-48 48s21.49 48 48 48 48-21.49 48-48c0-26.509-21.49-48-48-48zM108.922 60.922c-26.51 0-48 21.49-48 48s21.49 48 48 48 48-21.49 48-48-21.491-48-48-48z">
+        </path>
+    </svg>
+</div>
+
+<!-- Загрузка данных и изменение стиля прелоадера по окончании загрузки. -->
+<script>
+    const
+        successRedirectURL = getSuccessRedirectURL(),
+        warnings = [rec477317593, rec477317916, rec477318236, rec494891383],
+        confirmBlock = document.querySelector('div.uc-confirm-block'), // сюда вставить код основного блока с кнопкой подтверждения участия
+        infoDM = {}; // сюда записываются данные для отправки в книги ДМ из скрытого поля 'list_id' формы
+    hideWarnings(); // изначально текстовые блоки с предупреждениями скрыты
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        setVisitationType();
+        const userIcon = await waitAndFindElement('div.tlk-userbar__popup-email')
+            .catch(error => logError(error));
+        if (!userIcon) {
+            console.error('ЗАБЫЛ ДОБАВИТЬ СТРАНИЦУ В ЛК ТИЛЬДЫ ИЛИ ТИЛЬДА ПОМЕНЯЛА HTML-РАЗМЕТКУ!!!');
+        } else {
+            try {
+                const
+                    email = userIcon.innerHTML.slice(1, -1),
+                    mainData = await getDMData(email);
+
+                checkStatus(mainData); // показ блока с предупреждением в зависимости от статуса
+                if (checkUndefResultFields(mainData)) {
+                    alert('Заполните личные данные на странице ЛК!');
+                    window.location.replace('https://zdorovoeobrazovanie.ru/lk');
+                    return;
+                } else {
+                    $(function () {
+                        const md = mainData;
+                        $("form").each(function () {
+                            $(this).append(`<input id="emailHiddenField" type="hidden" name="email" value="${email}">`);
+                            $(this).append(`<input id="nameHiddenField" type="hidden" name="name" value="${md.name}">`);
+                            $(this).append(`<input id="phoneHiddenField" type="hidden" name="phone" value="${md.phone}">`);
+                            $(this).append(`<input id="specializationHiddenField" type="hidden" name="основная_специализация" value="${md.specialization}">`);
+                            $(this).append(`<input id="positionHiddenField" type="hidden" name="ваша_должность" value="${md.position}">`);
+                            $(this).append(`<input id="districtHiddenField" type="hidden" name="федеральный_округ" value="${md.district}">`);
+                            $(this).append(`<input id="cityHiddenField" type="hidden" name="город" value="${md.city}">`);
+                            $(this).append(`<input id="citizenshipHiddenField" type="hidden" name="гражданство" value="${md.citizenship}">`);
+                            $(this).append(`<input id="regionHiddenField" type="hidden" name="регион_для_россии" value="${md.region}">`);
+                        });
+                    });
+
+                    // console.log("emailHiddenField: ", emailHiddenField);
+                    // console.log("nameHiddenField: ", nameHiddenField);
+                    // console.log("phoneHiddenField: ", phoneHiddenField);
+                    // console.log("specializationHiddenField: ", specializationHiddenField);
+                    // console.log("positionHiddenField: ", positionHiddenField);
+                    // console.log("districtHiddenField: ", districtHiddenField);
+                    // console.log("cityHiddenField: ", cityHiddenField);
+                    // console.log("citizenshipHiddenField: ", citizenshipHiddenField);
+                    // console.log("regionHiddenField: ", regionHiddenField);
+
+                    const
+                        booksID = document.querySelector('input[type="hidden"][name="list_id"]').value.split(','),
+                        requests = booksID.map(bookID => {
+                            return new Promise(async (resolve, reject) => {
+                                try {
+                                    await getRegistrationData(email, bookID);
+                                    resolve();
+                                } catch (error) { reject(`for bookID '${bookID}': ${error}`); }
+                            });
+                        });
+
+                    await Promise.allSettled(requests)
+                        .then(results => {
+                            let gotRejected = false;
+                            results.forEach(result => {
+                                if (result.status == 'rejected') {
+                                    logError(result.reason);
+                                    gotRejected = true;
+                                }
+                            });
+
+                            /*/
+                             * если нет ошибки при получении данных из книг регистрации, то считаем, что пользователь
+                             * успешно зарегистрирован во всех книгах и предоставляем ему ссылку на мероприятие
+                            /*/
+                            if (!gotRejected) {
+                                showRedirectForUser();
+                            }
+                        });
+                }
+            } catch (error) { showErrorForUser(error); }
+        }
+        removePreloader();
+    });
+</script>
+
+<!-- Отправка заявок пользователей во все книги ДМ из скрытого поля 'list_id' формы. -->
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const confirmButton = confirmBlock.querySelector('button[type="submit"]'); // confirmBlock - глобальная переменная
+        confirmButton.addEventListener('click', async () => {
+            if (confirmBlock.style.display != 'none' && infoDM['visitationType']) { // infoDM - глобальная переменная
+                try {
+                    const
+                        emailPromise = waitAndFindElement('input[type="hidden"][name="email"]'),
+                        eventFormatPromise = waitAndFindElement('input[type="hidden"][name="event_format"]'),
+                        eventNamePromise = waitAndFindElement('input[type="hidden"][name="event_name"]'),
+                        eventDatePromise = waitAndFindElement('input[type="hidden"][name="event_date"]'),
+                        namePromise = waitAndFindElement('input[type="hidden"][name="name"]'),
+                        specializationPromise = waitAndFindElement('input[type="hidden"][name="основная_специализация"]'),
+                        districtPromise = waitAndFindElement('input[type="hidden"][name="федеральный_округ"]'),
+                        cityPromise = waitAndFindElement('input[type="hidden"][name="город"]'),
+                        visitationTypePromise = waitAndFindElement('input[type="hidden"][name="тип_посещения"]'),
+                        phonePromise = waitAndFindElement('input[type="hidden"][name="phone"]'),
+                        regionPromise = waitAndFindElement('input[type="hidden"][name="регион_для_россии"]'),
+                        citizenshipPromise = waitAndFindElement('input[type="hidden"][name="гражданство"]'),
+                        positionPromise = waitAndFindElement('input[type="hidden"][name="ваша_должность"]'),
+                        sourceUTM = getUtmParameter('utm_source'),
+                        mediumUTM = getUtmParameter('utm_medium'),
+                        campaignUTM = getUtmParameter('utm_campaign'),
+                        contentUTM = getUtmParameter('utm_content'),
+                        allPromises = [emailPromise, eventFormatPromise, eventNamePromise, eventDatePromise, namePromise, specializationPromise, districtPromise, cityPromise, visitationTypePromise, phonePromise, regionPromise, citizenshipPromise, positionPromise, sourceUTM, mediumUTM, campaignUTM, contentUTM],
+                        _ = await Promise.all(allPromises)
+                            .then(result => {
+                                getData(result.map(elem => elem && elem.value ? elem.value : elem));
+                            }),
+                        booksID = document.querySelector('input[type="hidden"][name="list_id"]').value.split(','),
+                        requests = booksID.map(bookID => {
+                            return new Promise(async (resolve, reject) => {
+                                try {
+                                    await writeDataToDM(bookID);
+                                    resolve();
+                                } catch (error) { reject(`for bookID '${bookID}': ${error}`); }
+                            });
+                        });
+
+                    await Promise.allSettled(requests)
+                        .then(results => {
+                            let gotRejected = false;
+                            results.forEach(result => {
+                                if (result.status == 'rejected') {
+                                    logError(result.reason);
+                                    gotRejected = true;
+                                }
+                            });
+
+                            if (!gotRejected) {
+                                window.location.replace(successRedirectURL)
+                            } else {
+                                showErrorForUser('ошибка в процессе записи в книги ДМ');
+                            }
+                        });
+                } catch (error) { logError(error); }
+            }
+        });
+    });
+</script>
+
+<!-- Стили прелоадера. -->
+<style>
+    body {
+        margin: 0;
+    }
+
+    .preloader {
+        position: fixed;
+        left: 0;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        overflow: hidden;
+        background-color: #ffffff;
+        /*background-image: linear-gradient(19deg, #265279 0%, rgb(168,175,196) 100%);*/
+        z-index: 1001;
+        color: #265279;
+    }
+
+    .preloader__image {
+        position: relative;
+        top: 50%;
+        left: 50%;
+        width: 70px;
+        height: 70px;
+        margin-top: -35px;
+        margin-left: -35px;
+        text-align: center;
+        animation: preloader-rotate 1.5s infinite linear;
+    }
+
+    @keyframes preloader-rotate {
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
+    .loaded_hiding .preloader {
+        transition: 0.3s opacity;
+        opacity: 0;
+    }
+
+    .loaded .preloader {
+        display: none;
+    }
+</style>
